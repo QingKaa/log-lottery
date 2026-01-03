@@ -12,8 +12,10 @@ import enterAudio from '@/assets/audio/enter.wav'
 import { useElementPosition, useElementStyle } from '@/hooks/useElement'
 import i18n from '@/locales/i18n'
 import useStore from '@/store'
+import { getActivityLotteryId } from '@/utils/auth'
 import { selectCard } from '@/utils'
 import { rgba } from '@/utils/color'
+import { activity_lottery_user_list } from '@/api/activity'
 import { LotteryStatus } from './type'
 import { confettiFire, createSphereVertices, createTableVertices, getRandomElements, initTableData } from './utils'
 
@@ -356,6 +358,8 @@ export function useViewModel() {
         }
         personPool.value = currentPrize.value.isAll ? notThisPrizePersonList.value : notPersonList.value
         // 验证抽奖人数是否还够
+        console.log('🏷️🏷️🏷️[  ] ====> personPool.value', personPool.value);
+        console.log('🏷️🏷️🏷️[  ] ====> currentPrize.value.count - currentPrize.value.isUsedCount', currentPrize.value.count - currentPrize.value.isUsedCount);
         if (personPool.value.length < currentPrize.value.count - currentPrize.value.isUsedCount) {
             toast.open({
                 message: i18n.global.t('error.personNotEnough'),
@@ -523,7 +527,7 @@ export function useViewModel() {
      * @param {string} mod 模式
      */
     function randomBallData(mod: 'default' | 'lucky' | 'sphere' = 'default') {
-    // 两秒执行一次
+        // 两秒执行一次
         intervalTimer.value = setInterval(() => {
             // 产生随机数数组
             const indexLength = 4
@@ -581,7 +585,7 @@ export function useViewModel() {
      * @description: 清理资源，避免内存溢出
      */
     function cleanup() {
-    // 停止所有Tween动画
+        // 停止所有Tween动画
         TWEEN.removeAll()
 
         // 清理动画循环
@@ -640,7 +644,45 @@ export function useViewModel() {
         // 刷新页面
         window.location.reload()
     }
-    const init = () => {
+
+    /**
+     * 从API获取人员列表
+     */
+    async function fetchPersonList() {
+        try {
+            const activityLotteryId = getActivityLotteryId()
+            if (!activityLotteryId) {
+                console.log('缺少activity_lottery_id')
+                return
+            }
+
+            const response: any = await activity_lottery_user_list({
+                activity_lottery_id: activityLotteryId,
+            })
+
+            if (response.code === 200 && response.data) {
+                // API返回的直接是数组结构,数据在data中
+                const personListData = response.data || []
+                // 同步更新到本地store(保持兼容性)
+                personConfig.resetPerson()
+                personConfig.addNotPersonList(personListData)
+                console.log(`✅ 人员列表加载完成，共 ${personListData.length} 人`)
+            }
+        }
+        catch (error: any) {
+            console.error('获取人员列表失败:', error)
+            toast.open({
+                message: error.message || '获取人员列表失败',
+                type: 'error',
+                position: 'top-right',
+            })
+        }
+    }
+
+    const init = async () => {
+        // 先获取人员列表
+        await fetchPersonList()
+
         const startTime = Date.now()
         const maxWaitTime = 2000 // 2秒
 

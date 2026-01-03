@@ -46,20 +46,15 @@ const patternColorValue = defineModel<string>('patternColorValue')
       <label class="label">
         <span class="label-text">{{ t('table.backgroundImage') }}</span>
       </label>
-      <select
-        v-model="backgroundImageValue" data-choose-theme
-        class="box-border w-full max-w-xs truncate border-solid select border"
-      >
+      <select v-model="backgroundImageValue" data-choose-theme
+        class="box-border w-full max-w-xs truncate border-solid select border">
         <option disabled selected class="w-full truncate">
           {{ t('table.backgroundImage') }}
         </option>
-        <option
-          v-for="(item, index) in [{ name: '❌', url: '', id: '' }, ...imageList]" :key="index"
-          :value="item"
-          :title="item.name"
-          class="box-border w-full truncate"
-        >
-          <span class="truncate w-option-xs">{{ item.name }}</span>
+        <option v-for="(item, index) in [{ name: '❌', url: '', id: '' }, ...imageList]" :key="index" :value="item"
+          :title="item.name" class="box-border w-full truncate">
+          <!-- <span class="truncate w-option-xs"></span> -->
+          {{ item.name }}
         </option>
       </select>
       <span class="label">
@@ -103,6 +98,4 @@ const patternColorValue = defineModel<string>('patternColorValue')
   </fieldset>
 </template>
 
-<style scoped>
-
-</style>
+<style scoped></style>

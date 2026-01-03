@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-parsing-error -->
 <script setup lang='ts'>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DaiysuiTable from '@/components/DaiysuiTable/index.vue'
 import CustomDialog from '@/components/Dialog/index.vue'
@@ -23,10 +23,16 @@ const {
   alreadyPersonList,
   allPersonList,
   tableColumnList,
-  downloadTemplate,
+  fetchPersonList,
 } = useViewModel({ exportInputFileRef })
 const { t } = useI18n()
 const limitType = '.xlsx,.xls'
+const baseUrl = import.meta.env.VITE_BASE_URL || ''
+
+// 组件挂载时获取人员列表
+onMounted(() => {
+  fetchPersonList()
+})
 </script>
 
 <template>
@@ -60,13 +66,14 @@ const limitType = '.xlsx,.xls'
             {{ t('button.allDelete') }}
           </button>
           <div class="tooltip tooltip-bottom" :data-tip="t('tooltip.downloadTemplateTip')">
-            <button class="no-underline btn btn-secondary btn-sm" @click="downloadTemplate">
+            <a
+              class="no-underline btn btn-secondary btn-sm"
+              :download="t('data.xlsxName')"
+              target="_blank"
+              :href="`${baseUrl}/front/activity/lottery/user/download-template`"
+            >
               {{ t('button.downloadTemplate') }}
-            </button>
-            <!-- <a
-              class="no-underline btn btn-secondary btn-sm" :download="t('data.xlsxName')" target="_blank"
-              :href="`${baseUrl}${t('data.xlsxName')}`"
-            >{{ t('button.downloadTemplate') }}</a> -->
+            </a>
           </div>
           <div class="">
             <label for="explore">

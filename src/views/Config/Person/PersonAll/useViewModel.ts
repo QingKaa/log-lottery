@@ -11,8 +11,16 @@ import i18n from '@/locales/i18n'
 import useStore from '@/store'
 import { addOtherInfo } from '@/utils'
 import { readFileBinary, readLocalFileAsArraybuffer } from '@/utils/file'
+import { getActivityLotteryId } from '@/utils/auth'
 import { tableColumns } from './columns'
 import ImportExcelWorker from './importExcel.worker?worker'
+import {
+  activity_lottery_user_list,
+  activity_lottery_user_import,
+  activity_lottery_user_delete,
+  activity_lottery_user_reset,
+  activity_lottery_user_export,
+} from '@/api/activity'
 
 type IBasePersonConfig = Pick<IPersonConfig, 'uid' | 'name' | 'department' | 'identity' | 'avatar'>
 
@@ -33,6 +41,46 @@ export function useViewModel({ exportInputFileRef }: { exportInputFileRef: Ref<H
     avatar: '',
     identity: '',
   })
+
+  // 人员列表数据(从API获取)
+  const personListData = ref<IPersonConfig[]>([])
+
+  /**
+   * 从API获取人员列表
+   */
+  async function fetchPersonList() {
+    try {
+      const activityLotteryId = getActivityLotteryId()
+      if (!activityLotteryId) {
+        toast.open({
+          message: '缺少activity_lottery_id',
+          type: 'error',
+          position: 'top-right',
+        })
+        return
+      }
+
+      const response = await activity_lottery_user_list({
+        activity_lottery_id: activityLotteryId,
+      })
+
+      if (response.code === 200 && response.data) {
+        // API返回的直接是数组结构,数据在data中
+        personListData.value = response.data || []
+        // 同步更新到本地store(保持兼容性)
+        personConfig.resetPerson()
+        personConfig.addNotPersonList(personListData.value)
+      }
+    }
+    catch (error: any) {
+      console.error('获取人员列表失败:', error)
+      toast.open({
+        message: error.message || '获取人员列表失败',
+        type: 'error',
+        position: 'top-right',
+      })
+    }
+  }
   async function getExcelTemplateContent() {
     const locale = i18n.global.locale.value
     if (locale === 'zhCn') {
@@ -57,44 +105,57 @@ export function useViewModel({ exportInputFileRef }: { exportInputFileRef: Ref<H
     sendWorkerMessage({ type: 'start', data, templateData: await getExcelTemplateContent() })
   }
   /**
-   * 获取用户数据
+   * 获取用户数据 - 通过API导入
    */
   async function handleFileChange(e: Event) {
-    if (worker) {
-      worker.onmessage = (e) => {
-        if (e.data.type === 'done') {
-          personConfig.resetPerson()
-          personConfig.addNotPersonList(e.data.data)
-          // 提示导入成功
-          toast.open({
-            message: t('error.importSuccess'),
-            type: 'success',
-            position: 'top-right',
-          })
-          // 导入成功后清空file input
-          clearFileInput()
-        }
-        if (e.data.type === 'error') {
-          if (e.data.message === 'not right template') {
-            toast.open({
-              message: t('error.excelFileError'),
-              type: 'error',
-              position: 'top-right',
-            })
-            return
-          }
-          toast.open({
-            message: e.data.message || t('error.importFail'),
-            type: 'error',
-            position: 'top-right',
-          })
-          // toast.warning(e.data.message || '导入错误')
-        }
+    try {
+      const file = ((e.target as HTMLInputElement).files as FileList)[0]
+      if (!file) return
+
+      loading?.show()
+
+      const activityLotteryId = getActivityLotteryId()
+      if (!activityLotteryId) {
+        toast.open({
+          message: '缺少activity_lottery_id',
+          type: 'error',
+          position: 'top-right',
+        })
         loading?.hide()
+        return
+      }
+
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('activity_lottery_id', String(activityLotteryId))
+
+      const response = await activity_lottery_user_import(formData)
+
+      if (response.code === 200) {
+        toast.open({
+          message: t('error.importSuccess'),
+          type: 'success',
+          position: 'top-right',
+        })
+        // 重新获取人员列表
+        await fetchPersonList()
+        clearFileInput()
+      }
+      else {
+        throw new Error(response.message || '导入失败')
       }
     }
-    const dataBinary = await readFileBinary(((e.target as HTMLInputElement).files as FileList)[0]!)
-    startWorker(dataBinary)
+    catch (error: any) {
+      console.error('导入失败:', error)
+      toast.open({
+        message: error.message || t('error.importFail'),
+        type: 'error',
+        position: 'top-right',
+      })
+    }
+    finally {
+      loading?.hide()
+    }
   }
   // 清空file input
   function clearFileInput() {
@@ -102,77 +163,190 @@ export function useViewModel({ exportInputFileRef }: { exportInputFileRef: Ref<H
       exportInputFileRef.value.value = ''
     }
   }
-  function downloadTemplate() {
-    // 下载
-    const templateFileName = i18n.global.t('data.xlsxName')
-    const fileUrl = `${baseUrl}${templateFileName}`
-    fetch(fileUrl)
-      .then(res => res.blob())
-      .then((blob) => {
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = templateFileName
-        a.click()
+  // 导出数据 - 通过API
+  async function exportData() {
+    try {
+      loading?.show()
+      const activityLotteryId = getActivityLotteryId()
+      if (!activityLotteryId) {
         toast.open({
-          message: t('error.downloadSuccess'),
+          message: '缺少activity_lottery_id',
+          type: 'error',
+          position: 'top-right',
+        })
+        return
+      }
+
+      const response = await activity_lottery_user_export({ activity_lottery_id: activityLotteryId })
+
+      // 处理文件下载
+      const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `人员列表_${new Date().getTime()}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
+
+      toast.open({
+        message: '导出成功',
+        type: 'success',
+        position: 'top-right',
+      })
+    }
+    catch (error: any) {
+      console.error('导出失败:', error)
+      toast.open({
+        message: error.message || '导出失败',
+        type: 'error',
+        position: 'top-right',
+      })
+    }
+    finally {
+      loading?.hide()
+    }
+  }
+
+  async function resetData() {
+    try {
+      loading?.show()
+      const activityLotteryId = getActivityLotteryId()
+      if (!activityLotteryId) {
+        toast.open({
+          message: '缺少activity_lottery_id',
+          type: 'error',
+          position: 'top-right',
+        })
+        return
+      }
+
+      const response = await activity_lottery_user_reset({ activity_lottery_id: activityLotteryId })
+
+      if (response.code === 200) {
+        toast.open({
+          message: '重置成功',
           type: 'success',
           position: 'top-right',
         })
-      })
-  }
-  // 导出数据
-  function exportData() {
-    let data = JSON.parse(JSON.stringify(allPersonList.value))
-    // 排除一些字段
-    for (let i = 0; i < data.length; i++) {
-      delete data[i].x
-      delete data[i].y
-      delete data[i].id
-      delete data[i].createTime
-      delete data[i].updateTime
-      delete data[i].prizeId
-      // 修改字段名称
-      if (data[i].isWin) {
-        data[i].isWin = i18n.global.t('data.yes')
+        // 重新获取人员列表
+        await fetchPersonList()
       }
       else {
-        data[i].isWin = i18n.global.t('data.no')
+        throw new Error(response.message || '重置失败')
       }
-      // 格式化数组为
-      data[i].prizeTime = data[i].prizeTime.join(',')
-      data[i].prizeName = data[i].prizeName.join(',')
     }
-    let dataString = JSON.stringify(data)
-    dataString = dataString
-      .replaceAll(/uid/g, i18n.global.t('data.number'))
-      .replaceAll(/isWin/g, i18n.global.t('data.isWin'))
-      .replaceAll(/department/g, i18n.global.t('data.department'))
-      .replaceAll(/name/g, i18n.global.t('data.name'))
-      .replaceAll(/identity/g, i18n.global.t('data.identity'))
-      .replaceAll(/prizeName/g, i18n.global.t('data.prizeName'))
-      .replaceAll(/prizeTime/g, i18n.global.t('data.prizeTime'))
-
-    data = JSON.parse(dataString)
-
-    if (data.length > 0) {
-      const dataBinary = XLSX.utils.json_to_sheet(data)
-      const dataBinaryBinary = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(dataBinaryBinary, dataBinary, 'Sheet1')
-      XLSX.writeFile(dataBinaryBinary, 'data.xlsx')
+    catch (error: any) {
+      console.error('重置失败:', error)
+      toast.open({
+        message: error.message || '重置失败',
+        type: 'error',
+        position: 'top-right',
+      })
+    }
+    finally {
+      loading?.hide()
     }
   }
 
-  function resetData() {
-    personConfig.resetAlreadyPerson()
+  async function deleteAll() {
+    try {
+      loading?.show()
+      const activityLotteryId = getActivityLotteryId()
+      if (!activityLotteryId) {
+        toast.open({
+          message: '缺少activity_lottery_id',
+          type: 'error',
+          position: 'top-right',
+        })
+        return
+      }
+
+      // 获取所有人员的lottery_code
+      const lotteryCodes = allPersonList.value.map(person => person.lottery_code || person.uid).filter(Boolean)
+
+      if (lotteryCodes.length === 0) {
+        toast.open({
+          message: '没有可删除的人员',
+          type: 'info',
+          position: 'top-right',
+        })
+        loading?.hide()
+        return
+      }
+
+      const response = await activity_lottery_user_delete({
+        activity_lottery_id: activityLotteryId,
+        lottery_codes: lotteryCodes,
+      })
+
+      if (response.code === 200) {
+        toast.open({
+          message: '删除成功',
+          type: 'success',
+          position: 'top-right',
+        })
+        // 重新获取人员列表
+        await fetchPersonList()
+      }
+      else {
+        throw new Error(response.message || '删除失败')
+      }
+    }
+    catch (error: any) {
+      console.error('删除失败:', error)
+      toast.open({
+        message: error.message || '删除失败',
+        type: 'error',
+        position: 'top-right',
+      })
+    }
+    finally {
+      loading?.hide()
+    }
   }
 
-  function deleteAll() {
-    personConfig.deleteAllPerson()
-  }
+  async function delPersonItem(row: IPersonConfig) {
+    try {
+      loading?.show()
+      const activityLotteryId = getActivityLotteryId()
+      if (!activityLotteryId) {
+        toast.open({
+          message: '缺少activity_lottery_id',
+          type: 'error',
+          position: 'top-right',
+        })
+        return
+      }
 
-  function delPersonItem(row: IPersonConfig) {
-    personConfig.deletePerson(row)
+      const response = await activity_lottery_user_delete({
+        activity_lottery_id: activityLotteryId,
+        lottery_codes: [row.lottery_code || row.uid], // 使用lottery_code字段
+      })
+
+      if (response.code === 200) {
+        toast.open({
+          message: '删除成功',
+          type: 'success',
+          position: 'top-right',
+        })
+        // 重新获取人员列表
+        await fetchPersonList()
+      }
+      else {
+        throw new Error(response.message || '删除失败')
+      }
+    }
+    catch (error: any) {
+      console.error('删除失败:', error)
+      toast.open({
+        message: error.message || '删除失败',
+        type: 'error',
+        position: 'top-right',
+      })
+    }
+    finally {
+      loading?.hide()
+    }
   }
   function addOnePerson(addOnePersonDrawerRef: any, event: any) {
     event.preventDefault()
@@ -196,6 +370,6 @@ export function useViewModel({ exportInputFileRef }: { exportInputFileRef: Ref<H
     addOnePerson,
     addPersonModalVisible,
     singlePersonData,
-    downloadTemplate,
+    fetchPersonList,
   }
 }

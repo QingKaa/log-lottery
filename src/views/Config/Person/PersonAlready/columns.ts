@@ -10,7 +10,7 @@ export function tableColumns(props: IColumnsProps) {
     return [
         {
             label: i18n.global.t('data.number'),
-            props: 'uid',
+            props: 'lottery_code',
             sort: true,
         },
         {
@@ -18,29 +18,37 @@ export function tableColumns(props: IColumnsProps) {
             props: 'name',
         },
         {
-            label: i18n.global.t('data.avatar'),
-            props: 'avatar',
+            label: '手机号码',
+            props: 'phone',
             formatValue(row: any) {
-                return row.avatar ? `<img src="${row.avatar}" alt="avatar" style="width: 50px; height: 50px;"/>` : '-'
+                return row.phone || '-'
             },
         },
         {
-            label: i18n.global.t('data.department'),
-            props: 'department',
+            label: '公司',
+            props: 'company',
+            formatValue(row: any) {
+                return row.company || '-'
+            },
         },
         {
-            label: i18n.global.t('data.identity'),
-            props: 'identity',
+            label: '职位',
+            props: 'position',
+            formatValue(row: any) {
+                return row.position || '-'
+            },
         },
         {
             label: i18n.global.t('data.prizeName'),
-            props: 'prizeName',
+            props: 'prizes',
             sort: true,
-        },
-        props.showPrizeTime && {
-            label: i18n.global.t('data.prizeTime'),
-            props: 'prizeTime',
-
+            formatValue(row: any) {
+                const prizes = row.prizes || []
+                if (prizes.length > 0) {
+                    return prizes.map((p: any) => p.name).join(', ')
+                }
+                return '-'
+            },
         },
         {
             label: i18n.global.t('data.operation'),

@@ -14,6 +14,14 @@ export interface IPersonConfig {
     prizeName: string[]
     prizeId: string[]
     prizeTime: string[]
+    // API新增字段
+    lottery_code?: string
+    phone?: string
+    company?: string
+    position?: string
+    is_sign?: number
+    is_winner?: number
+    prizes?: any[]
 }
 export interface Separate {
     id: string
